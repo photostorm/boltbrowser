@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package boltbrowser
 
 // Windows doesn't support process backgrounding like *nix.
 // So we have a separate loop for it.
