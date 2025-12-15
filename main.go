@@ -7,33 +7,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nsf/termbox-go"
-	"go.etcd.io/bbolt"
+	"github.com/br0xen/boltbrowser/pkg/boltbrowser"
 )
 
-var ProgramName = "boltbrowser"
-var VersionNum = 2.0
-
-var databaseFiles []string
-var db *bbolt.DB
-var memBolt *BoltDB
-
-var currentFilename string
-
-const DefaultDBOpenTimeout = time.Second
-
-var AppArgs struct {
-	DBOpenTimeout time.Duration
-	ReadOnly      bool
-	NoValue       bool
+func main() {
+	args := boltbrowser.DefaultArgs()
+	files := parseArgs(&args)
+	err := boltbrowser.Main(args, files)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 }
 
-func init() {
-	AppArgs.DBOpenTimeout = DefaultDBOpenTimeout
-	AppArgs.ReadOnly = false
-}
-
-func parseArgs() {
+func parseArgs(args *boltbrowser.Args) (databaseFiles []string) {
 	var err error
 	if len(os.Args) == 1 {
 		printUsage(nil)
@@ -51,10 +38,10 @@ func parseArgs() {
 			key, val := pts[0], pts[1]
 			switch key {
 			case "-timeout":
-				AppArgs.DBOpenTimeout, err = time.ParseDuration(val)
+				args.DBOpenTimeout, err = time.ParseDuration(val)
 				if err != nil {
 					// See if we can successfully parse by adding a 's'
-					AppArgs.DBOpenTimeout, err = time.ParseDuration(val + "s")
+					args.DBOpenTimeout, err = time.ParseDuration(val + "s")
 				}
 				// If err is still not nil, print usage
 				if err != nil {
@@ -62,11 +49,11 @@ func parseArgs() {
 				}
 			case "-readonly", "-ro":
 				if val == "true" {
-					AppArgs.ReadOnly = true
+					args.ReadOnly = true
 				}
 			case "-no-value":
 				if val == "true" {
-					AppArgs.NoValue = true
+					args.NoValue = true
 				}
 			case "-help":
 				printUsage(nil)
@@ -77,9 +64,9 @@ func parseArgs() {
 			// Single-word arguments
 			switch parms[i] {
 			case "-readonly", "-ro":
-				AppArgs.ReadOnly = true
+				args.ReadOnly = true
 			case "-no-value":
-				AppArgs.NoValue = true
+				args.NoValue = true
 			case "-help":
 				printUsage(nil)
 			default:
@@ -87,58 +74,15 @@ func parseArgs() {
 			}
 		}
 	}
+	return
 }
 
 func printUsage(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] <filename(s)>\nOptions:\n", ProgramName)
+	fmt.Fprintf(os.Stderr, "Usage: boltbrowser [OPTIONS] <filename(s)>\nOptions:\n")
 	fmt.Fprintf(os.Stderr, "  -timeout=duration\n        DB file open timeout (default 1s)\n")
 	fmt.Fprintf(os.Stderr, "  -ro, -readonly   \n        Open the DB in read-only mode\n")
 	fmt.Fprintf(os.Stderr, "  -no-value        \n        Do not display a value in left pane\n")
-}
-
-func main() {
-	var err error
-
-	parseArgs()
-
-	err = termbox.Init()
-	if err != nil {
-		panic(err)
-	}
-	defer termbox.Close()
-	style := defaultStyle()
-	termbox.SetOutputMode(termbox.Output256)
-
-	for _, databaseFile := range databaseFiles {
-		currentFilename = databaseFile
-		db, err = bbolt.Open(databaseFile, 0600, &bbolt.Options{Timeout: AppArgs.DBOpenTimeout})
-		if err == bbolt.ErrTimeout {
-			termbox.Close()
-			fmt.Printf("File %s is locked. Make sure it's not used by another app and try again\n", databaseFile)
-			os.Exit(1)
-		} else if err != nil {
-			if len(databaseFiles) > 1 {
-				mainLoop(nil, style)
-				continue
-			} else {
-				termbox.Close()
-				fmt.Printf("Error reading file: %q\n", err.Error())
-				os.Exit(1)
-			}
-		}
-
-		// First things first, load the database into memory
-		memBolt.refreshDatabase()
-		if AppArgs.ReadOnly {
-			// If we're opening it in readonly mode, close it now
-			db.Close()
-		}
-
-		// Kick off the UI loop
-		mainLoop(memBolt, style)
-		defer db.Close()
-	}
 }
